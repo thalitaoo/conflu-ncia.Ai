@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Product, CourseClass, Student, View } from '../types';
 import EditClassModal from './EditClassModal';
 import QRCodeModal from './QRCodeModal';
+import { exportToCsv } from '../utils/exportUtils';
 
 interface TurmaDetailProps {
     product: Product;
@@ -23,6 +24,21 @@ const TurmaDetail: React.FC<TurmaDetailProps> = ({ product, courseClass, student
         classId: courseClass.id,
         sessionDate: new Date().toISOString().split('T')[0], // Just the date
     });
+    
+    const handleExport = () => {
+        const dataToExport = students.map(s => {
+            const enrollment = s.enrollments.find(e => e.classId === courseClass.id);
+            return {
+                'Nome': s.name,
+                'Email': s.email,
+                'Telefone': s.phone || 'N/A',
+                'Empresa': s.companyName || 'N/A',
+                'Status Pagamento': enrollment?.paymentStatus || 'N/A',
+            };
+        });
+        exportToCsv(`alunos_${product.name}_${courseClass.name}.csv`, dataToExport);
+    };
+
 
     return (
         <div className="space-y-6">
@@ -40,7 +56,7 @@ const TurmaDetail: React.FC<TurmaDetailProps> = ({ product, courseClass, student
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-shrink-0">
                          <button 
                             onClick={() => setIsQRModalOpen(true)}
-                            className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700"
+                            className="px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-md hover:bg-gray-700"
                         >
                             Gerar QR de Presença
                         </button>
@@ -63,7 +79,15 @@ const TurmaDetail: React.FC<TurmaDetailProps> = ({ product, courseClass, student
             </div>
 
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
-                <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Alunos Inscritos ({students.length})</h2>
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Alunos Inscritos ({students.length})</h2>
+                    <button
+                        onClick={handleExport}
+                        className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700"
+                    >
+                        Exportar Alunos (CSV)
+                    </button>
+                </div>
                 <div className="overflow-x-auto">
                      <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
                         <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">

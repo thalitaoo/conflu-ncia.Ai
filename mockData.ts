@@ -1,4 +1,4 @@
-import { Product, Student, PaymentMethod, PaymentStatus, CertificateStatus, Source, EnrollmentStatus, ActivityLogType, ActivityLogEntry } from './types';
+import { Product, Student, PaymentMethod, PaymentStatus, CertificateStatus, Source, EnrollmentStatus, ActivityLogType, ActivityLogEntry, AttendanceSource } from './types';
 
 const today = new Date();
 const tomorrow = new Date(today);
@@ -81,7 +81,12 @@ export const mockStudents: Student[] = [
                 enrollmentStatus: EnrollmentStatus.Active,
                 certificateStatus: CertificateStatus.NotIssued,
                 isCorporatePurchase: false,
-                attendance: [true, false, true, false], // 50%
+                attendance: [
+                    { status: true, source: AttendanceSource.Manual, timestamp: new Date().toISOString() },
+                    { status: false, source: AttendanceSource.System },
+                    { status: true, source: AttendanceSource.QRCode, timestamp: new Date().toISOString() },
+                    { status: false, source: AttendanceSource.System },
+                ],
             },
         ],
     },
@@ -108,7 +113,10 @@ export const mockStudents: Student[] = [
                 enrollmentStatus: EnrollmentStatus.Active,
                 certificateStatus: CertificateStatus.NotIssued,
                 isCorporatePurchase: false,
-                attendance: [false, false],
+                attendance: [
+                    { status: false, source: AttendanceSource.System },
+                    { status: false, source: AttendanceSource.System },
+                ],
             },
             {
                 id: 'enroll_3',
@@ -121,7 +129,7 @@ export const mockStudents: Student[] = [
                 enrollmentStatus: EnrollmentStatus.Completed,
                 certificateStatus: CertificateStatus.Issued,
                 isCorporatePurchase: false,
-                attendance: [true, true, true, true, true, true], // 100%
+                attendance: Array(6).fill(null).map(() => ({ status: true, source: AttendanceSource.Manual, timestamp: new Date().toISOString() })),
             },
         ],
     },
@@ -148,7 +156,7 @@ export const mockStudents: Student[] = [
                 enrollmentStatus: EnrollmentStatus.Active,
                 certificateStatus: CertificateStatus.NotIssued,
                 isCorporatePurchase: true,
-                attendance: [true, true, true, true, true], // 100%
+                attendance: Array(5).fill(null).map(() => ({ status: true, source: AttendanceSource.Manual, timestamp: new Date().toISOString() })),
             },
         ],
     },
@@ -170,7 +178,7 @@ export const mockStudents: Student[] = [
                 enrollmentStatus: EnrollmentStatus.NoShow,
                 certificateStatus: CertificateStatus.NotIssued,
                 isCorporatePurchase: false,
-                attendance: [false, false, false, false],
+                attendance: Array(4).fill(null).map(() => ({ status: false, source: AttendanceSource.System })),
             },
         ],
     },

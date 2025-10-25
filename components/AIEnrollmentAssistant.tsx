@@ -1,11 +1,11 @@
-
 import React, { useState } from 'react';
+// FIX: Corrected import from the geminiService module.
 import { extractEnrollmentData } from '../services/geminiService';
 import { Product } from '../types';
 
 interface AIEnrollmentAssistantProps {
     products: Product[];
-    onEnrollmentDataExtracted: (data: any) => void;
+    onEnrollmentDataExtracted: (data: any[]) => void;
 }
 
 const SparklesIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.9 5.8-5.6.8 4 3.9-1 5.5 5-2.7 5 2.7-1-5.5 4-3.9-5.6-.8z"/></svg>;
@@ -24,8 +24,12 @@ const AIEnrollmentAssistant: React.FC<AIEnrollmentAssistantProps> = ({ products,
         setError('');
         try {
             const data = await extractEnrollmentData(text, products);
-            onEnrollmentDataExtracted(data);
-            setText('');
+            if (data && data.length > 0) {
+                 onEnrollmentDataExtracted(data);
+                 setText('');
+            } else {
+                 setError('Não foram encontrados dados de alunos no texto.');
+            }
         } catch (err) {
             setError('Não foi possível extrair os dados. Verifique o texto e tente novamente.');
             console.error(err);
@@ -38,14 +42,14 @@ const AIEnrollmentAssistant: React.FC<AIEnrollmentAssistantProps> = ({ products,
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg h-full flex flex-col">
             <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">Assistente de Matrícula IA</h3>
             <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                Cole aqui uma mensagem (de WhatsApp, email, etc.) para que a IA extraia os dados e preencha o formulário.
+                Cole aqui uma mensagem (de WhatsApp, email, etc.) para que a IA extraia os dados e preencha o formulário. A IA pode processar múltiplos alunos de uma vez.
             </p>
             <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 rows={8}
                 className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:ring-indigo-500 focus:border-indigo-500"
-                placeholder="Ex: 'Olá, quero inscrever o João da Silva (joao@email.com) no Curso de Oratória. O pagamento será por PIX.'"
+                placeholder="Ex: 'Olá, quero inscrever o João da Silva (joao@email.com) e a Maria Souza (maria@email.com) no Curso de Oratória.'"
             />
             {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
             <button

@@ -1,6 +1,6 @@
-
 import React, { useState } from 'react';
 import { Student, View } from '../types';
+import { exportToCsv } from '../utils/exportUtils';
 
 interface AllStudentsModalProps {
     students: Student[];
@@ -12,19 +12,38 @@ const AllStudentsModal: React.FC<AllStudentsModalProps> = ({ students, onClose, 
     const [searchTerm, setSearchTerm] = useState('');
 
     const filteredStudents = students
-        .filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()))
+        .filter(s => s.role !== 'admin' && s.name.toLowerCase().includes(searchTerm.toLowerCase()))
         .sort((a, b) => a.name.localeCompare(b.name));
 
     const handleStudentClick = (studentId: string) => {
         setView({ type: 'student-profile', id: studentId });
         onClose();
     };
+    
+    const handleExport = () => {
+        const dataToExport = filteredStudents.map(s => ({
+            'Nome': s.name,
+            'Email': s.email,
+            'Telefone': s.phone || '',
+            'Empresa': s.companyName || '',
+            'Cargo': s.jobTitle || '',
+            'Localidade': s.location || '',
+            'Endereço': s.address || '',
+        }));
+        exportToCsv('todos_os_alunos_conflu.csv', dataToExport);
+    };
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-                <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Todos os Alunos ({students.length})</h2>
+                <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Todos os Alunos ({filteredStudents.length})</h2>
+                    <button
+                        onClick={handleExport}
+                        className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700"
+                    >
+                        Exportar Todos (CSV)
+                    </button>
                 </div>
                 <div className="p-6">
                     <input

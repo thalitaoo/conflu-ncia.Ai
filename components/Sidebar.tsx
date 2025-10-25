@@ -20,7 +20,7 @@ const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout, onGenerateInsights
     return (
         <aside className="w-64 bg-white dark:bg-gray-800 p-4 flex flex-col shadow-lg">
             <div className="flex-shrink-0 mb-8">
-                <h1 className="text-2xl font-bold text-center text-gray-900 dark:text-white">conflua.ai</h1>
+                <h1 className="text-2xl font-bold text-center text-gray-900 dark:text-white">Conflu</h1>
             </div>
             <nav className="flex-1 space-y-2">
                 <NavItem onClick={() => setView({ type: 'dashboard' })}>Dashboard</NavItem>

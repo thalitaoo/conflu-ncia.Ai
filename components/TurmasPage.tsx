@@ -1,8 +1,7 @@
-
 import React, { useState } from 'react';
-// FIX: Import View from types.ts and remove the local definition.
 import { Product, CourseClass, View } from '../types';
 import CreateClassModal from './CreateClassModal';
+import { exportToCsv } from '../utils/exportUtils';
 
 interface TurmasPageProps {
     products: Product[];
@@ -16,16 +15,39 @@ const TurmasPage: React.FC<TurmasPageProps> = ({ products, setView, onCreateClas
     const allTurmas = products.flatMap(p => p.classes.map(c => ({ ...c, productName: p.name, productId: p.id })));
     allTurmas.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+    const handleExport = () => {
+        const dataToExport = allTurmas.map(turma => ({
+            'Turma': turma.name,
+            'Curso': turma.productName,
+            'Data de Início': new Date(turma.date).toLocaleString('pt-BR'),
+            'Sessões': turma.totalSessions,
+            'Local': turma.location || 'N/A'
+        }));
+        if (dataToExport.length > 0) {
+            exportToCsv('todas_as_turmas.csv', dataToExport);
+        } else {
+            alert("Não há turmas para exportar.");
+        }
+    };
+
     return (
         <div className="space-y-6">
              <header className="flex justify-between items-center">
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Gerenciamento de Turmas</h1>
-                <button
-                    onClick={() => setIsCreateModalOpen(true)}
-                    className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700"
-                >
-                    + Criar Nova Turma
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleExport}
+                        className="px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-md hover:bg-gray-700"
+                    >
+                        Exportar CSV
+                    </button>
+                    <button
+                        onClick={() => setIsCreateModalOpen(true)}
+                        className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700"
+                    >
+                        + Criar Nova Turma
+                    </button>
+                </div>
             </header>
 
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">

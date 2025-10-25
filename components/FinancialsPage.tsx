@@ -1,5 +1,6 @@
 import React from 'react';
 import { Product, Student, PaymentStatus } from '../types';
+import { exportToCsv } from '../utils/exportUtils';
 
 interface FinancialsPageProps {
     products: Product[];
@@ -25,10 +26,31 @@ const FinancialsPage: React.FC<FinancialsPageProps> = ({ products, students }) =
     const billedRevenue = allEnrollments
         .filter(e => e.paymentStatus === PaymentStatus.Billed && e.product)
         .reduce((sum, e) => sum + (e.product?.price || 0), 0);
+    
+    const handleExport = () => {
+        const dataToExport = allEnrollments.map(e => ({
+            'Data': new Date(e.enrollmentDate).toLocaleDateString('pt-BR'),
+            'Aluno': e.studentName,
+            'Curso': e.product?.name || 'N/A',
+            'Valor': e.product?.price.toFixed(2).replace('.', ',') || '0,00',
+            'Status Pagamento': e.paymentStatus,
+            'Método Pagamento': e.paymentMethod,
+            'Fonte': e.source
+        }));
+        exportToCsv('relatorio_financeiro_conflu.csv', dataToExport);
+    };
 
     return (
         <div className="space-y-6">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Financeiro</h1>
+            <header className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Financeiro</h1>
+                <button
+                    onClick={handleExport}
+                    className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700"
+                >
+                    Exportar CSV
+                </button>
+            </header>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg">

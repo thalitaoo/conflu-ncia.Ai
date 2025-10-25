@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
 // FIX: Import View from types.ts and remove the local definition.
-import { Student, Product, EnrollmentStatus, CertificateStatus, View } from '../types';
+import { Student, Product, EnrollmentStatus, CertificateStatus, View, AttendanceRecord } from '../types';
 import CertificateModal from './CertificateModal';
 import NewEnrollmentModal from './NewEnrollmentModal';
 import EditStudentModal from './EditStudentModal';
@@ -48,9 +47,9 @@ const StudentProfile: React.FC<StudentProfileProps> = ({ student, products, setV
         }
     };
 
-    const calculatePresence = (attendance: boolean[]) => {
+    const calculatePresence = (attendance: AttendanceRecord[]) => {
         if (!attendance || attendance.length === 0) return 0;
-        const attended = attendance.filter(Boolean).length;
+        const attended = attendance.filter(att => att.status).length;
         return (attended / attendance.length) * 100;
     };
     
@@ -94,12 +93,22 @@ const StudentProfile: React.FC<StudentProfileProps> = ({ student, products, setV
                                 const presencePercentage = calculatePresence(enrollment.attendance);
                                 const isEligibleForCert = presencePercentage >= 80 && enrollment.enrollmentStatus === EnrollmentStatus.Completed;
 
+                                const certificateDisplayStatus = () => {
+                                    if (enrollment.certificateStatus === CertificateStatus.Issued) {
+                                        return <span className="font-semibold text-green-600 dark:text-green-400">{CertificateStatus.Issued}</span>;
+                                    }
+                                    if (isEligibleForCert) {
+                                        return <span className="font-semibold text-amber-600 dark:text-amber-500">Apto para Emissão</span>;
+                                    }
+                                    return enrollment.certificateStatus;
+                                };
+
                                 return (
                                     <div key={enrollment.id} className={`p-4 rounded-lg border-l-4 ${getStatusColor(enrollment.enrollmentStatus)} bg-gray-50 dark:bg-gray-700/50`}>
                                         <div className="flex justify-between items-start">
                                             <div>
                                                 <h3 className="font-bold text-gray-800 dark:text-gray-200">{product.name}</h3>
-                                                <p className="text-sm text-gray-500 dark:text-gray-400">Status: {enrollment.enrollmentStatus} | Pagamento: {enrollment.paymentStatus}</p>
+                                                <p className="text-sm text-gray-500 dark:text-gray-400">Status: {enrollment.enrollmentStatus} | Pagamento: {enrollment.paymentStatus} | Certificado: {certificateDisplayStatus()}</p>
                                             </div>
                                             <div>
                                                 {isEligibleForCert && enrollment.certificateStatus !== CertificateStatus.Issued && (
@@ -118,7 +127,7 @@ const StudentProfile: React.FC<StudentProfileProps> = ({ student, products, setV
                                                 <div className="bg-green-500 h-2 rounded-full" style={{ width: `${presencePercentage}%` }}></div>
                                             </div>
                                             <div className="flex gap-1 mt-2">
-                                                {enrollment.attendance.map((att, i) => <div key={i} className={`w-4 h-4 rounded-sm ${att ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-500'}`} title={`Sessão ${i+1}: ${att ? 'Presente' : 'Ausente'}`}></div>)}
+                                                {enrollment.attendance.map((att, i) => <div key={i} className={`w-4 h-4 rounded-sm ${att.status ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-500'}`} title={`Sessão ${i+1}: ${att.status ? 'Presente' : 'Ausente'}`}></div>)}
                                             </div>
                                         </div>
                                     </div>

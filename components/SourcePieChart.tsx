@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Student, Source } from '../types';
 
@@ -13,6 +12,7 @@ const sourceColors: { [key in Source]: string } = {
     [Source.Link]: '#3B82F6',
     [Source.Formulario]: '#F59E0B',
     [Source.InCompany]: '#8B5CF6',
+    [Source.Chatbot]: '#14B8A6', // Teal color for chatbot
 };
 
 const PieChart: React.FC<{ data: { name: string; value: number; color: string }[] }> = ({ data }) => {
@@ -75,10 +75,11 @@ const SourcePieChart: React.FC<SourcePieChartProps> = ({ students }) => {
         return acc;
     }, {} as Record<Source, number>);
 
-    const chartData = Object.entries(sourceCounts).map(([source, count]) => ({
+    // FIX: Use Object.keys with a type assertion for stronger type inference in the map and sort operations.
+    const chartData = (Object.keys(sourceCounts) as Source[]).map(source => ({
         name: source,
-        value: count,
-        color: sourceColors[source as Source],
+        value: sourceCounts[source],
+        color: sourceColors[source] || '#6B7280', // Fallback color
     })).sort((a,b) => b.value - a.value);
 
     return (

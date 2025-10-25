@@ -1,6 +1,6 @@
-
 import React from 'react';
 import { Product, View } from '../types';
+import { exportToCsv } from '../utils/exportUtils';
 
 interface OpenClassesModalProps {
     products: Product[];
@@ -20,12 +20,34 @@ const OpenClassesModal: React.FC<OpenClassesModalProps> = ({ products, onClose, 
         onClose();
     };
 
+    const handleExport = () => {
+        const dataToExport = openClasses.map(c => ({
+            'Turma': c.name,
+            'Curso': c.productName,
+            'Data de Início': new Date(c.date).toLocaleDateString('pt-BR'),
+            'Local': c.location || 'N/A'
+        }));
+        if (dataToExport.length > 0) {
+            exportToCsv('turmas_abertas.csv', dataToExport);
+        } else {
+            alert("Não há turmas abertas para exportar.");
+        }
+    };
+
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-                <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Turmas Abertas</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Turmas com data de início futura.</p>
+                <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                    <div>
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Turmas Abertas</h2>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Turmas com data de início futura.</p>
+                    </div>
+                     <button
+                        onClick={handleExport}
+                        className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700"
+                    >
+                        Exportar CSV
+                    </button>
                 </div>
                 <div className="p-6 overflow-y-auto">
                     {openClasses.length > 0 ? (

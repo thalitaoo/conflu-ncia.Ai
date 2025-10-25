@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
+import { View } from '../types';
 
 interface LoginPageProps {
     onLogin: (email: string, pass: string) => boolean;
+    setView: (view: View) => void;
 }
 
-const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
+const LoginPage: React.FC<LoginPageProps> = ({ onLogin, setView }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -20,9 +22,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
 
     return (
         <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900">
-            <div className="w-full max-w-md p-8 space-y-8 bg-white dark:bg-gray-800 rounded-xl shadow-2xl">
+            <div className="w-full max-w-md p-8 space-y-8 bg-white dark:bg-gray-800 rounded-xl shadow-2xl relative">
+                 <button onClick={() => setView({ type: 'home' })} className="absolute top-4 left-4 text-sm text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300">
+                    &larr; Voltar
+                </button>
                 <div>
-                     <h1 className="text-3xl font-bold text-center text-gray-900 dark:text-white">conflua.ai</h1>
+                     <h1 className="text-3xl font-bold text-center text-gray-900 dark:text-white mt-6">Conflu</h1>
                     <h2 className="mt-6 text-center text-2xl font-extrabold text-gray-900 dark:text-white">
                         Acesse sua conta
                     </h2>

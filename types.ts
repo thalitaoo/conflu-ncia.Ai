@@ -30,6 +30,18 @@ export interface Student {
     password?: string; // Added for authentication
 }
 
+export enum AttendanceSource {
+    Manual = 'Manual',
+    QRCode = 'QR Code',
+    System = 'Sistema',
+}
+
+export interface AttendanceRecord {
+    status: boolean;
+    source: AttendanceSource;
+    timestamp?: string;
+}
+
 export interface Enrollment {
     id: string;
     productId: string;
@@ -41,7 +53,7 @@ export interface Enrollment {
     enrollmentStatus: EnrollmentStatus;
     certificateStatus: CertificateStatus;
     isCorporatePurchase: boolean;
-    attendance: boolean[];
+    attendance: AttendanceRecord[];
 }
 
 export enum Source {
@@ -51,11 +63,12 @@ export enum Source {
     Link = 'Link de Inscrição',
     Formulario = 'Formulário',
     InCompany = 'In-Company',
+    Chatbot = 'Chatbot',
 }
 
 export enum PaymentMethod {
     Pix = 'PIX',
-    CreditCard = 'Cartão de Crédito',
+    CreditCard = 'Cartão de Crédrito',
     BankTransfer = 'Transferência Bancária',
 }
 
@@ -89,6 +102,8 @@ export enum ActivityLogType {
     CERTIFICATE_ISSUED = 'certificate_issued',
     CLASS_UPDATE = 'class_update',
     BATCH_CERTIFICATE_ISSUED = 'batch_certificate_issued',
+    EMAIL_NOTIFICATION = 'email_notification',
+    ACCOUNT_CREATED = 'account_created',
 }
 
 
@@ -102,6 +117,13 @@ export interface ActivityLogEntry {
 }
 
 export type View = {
-    type: 'dashboard' | 'enrollment' | 'product-detail' | 'student-profile' | 'turmas' | 'turma-detail' | 'financials' | 'register' | 'student-dashboard';
+    type: 'dashboard' | 'enrollment' | 'product-detail' | 'student-profile' | 'turmas' | 'turma-detail' | 'financials' | 'register' | 'student-dashboard' | 'home' | 'login' | 'signup';
     id?: string;
 };
+
+export interface ChatMessage {
+  id: string;
+  sender: 'user' | 'bot';
+  text: string;
+  options?: { label: string; value: string; payload?: any }[];
+}

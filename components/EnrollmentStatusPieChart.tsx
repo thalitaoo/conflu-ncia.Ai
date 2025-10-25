@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Student, EnrollmentStatus } from '../types';
 
@@ -74,10 +73,11 @@ const EnrollmentStatusPieChart: React.FC<EnrollmentStatusPieChartProps> = ({ stu
 // FIX: Type the initial value for the reduce method.
     }, {} as Record<EnrollmentStatus, number>);
 
-    const chartData = Object.entries(statusCounts).map(([status, count]) => ({
+    // FIX: Use Object.keys with a type assertion for stronger type inference in the map and sort operations.
+    const chartData = (Object.keys(statusCounts) as EnrollmentStatus[]).map(status => ({
         name: status,
-        value: count,
-        color: statusColors[status as EnrollmentStatus],
+        value: statusCounts[status],
+        color: statusColors[status],
     })).sort((a,b) => b.value - a.value);
 
     return (

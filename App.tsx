@@ -1,8 +1,10 @@
-
-import React, { useState, useEffect } from 'react';
-// FIX: Import Source and PaymentMethod
-import { Product, Student, Enrollment, CourseClass, ActivityLogEntry, EnrollmentStatus, ActivityLogType, CertificateStatus, PaymentStatus, View, Source, PaymentMethod } from './types';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Product, Student, View, ActivityLogEntry, CourseClass, Enrollment, EnrollmentStatus, CertificateStatus, PaymentStatus, Source, ActivityLogType, PaymentMethod, AttendanceSource, AttendanceRecord } from './types';
 import { mockProducts, mockStudents, mockActivityLog } from './mockData';
+import { generateInsights } from './services/geminiService';
+import { sendEnrollmentConfirmation, sendCertificateNotification } from './services/emailService';
+
+// Components
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import EnrollmentPage from './components/EnrollmentPage';
@@ -12,368 +14,495 @@ import TurmasPage from './components/TurmasPage';
 import TurmaDetail from './components/TurmaDetail';
 import FinancialsPage from './components/FinancialsPage';
 import LoginPage from './components/LoginPage';
+import SignupPage from './components/SignupPage';
 import StudentDashboard from './components/StudentDashboard';
-import { generateInsights } from './services/geminiService';
+import PublicHomePage from './components/PublicHomePage';
 import InsightsModal from './components/InsightsModal';
-import WhatsAppChatbot from './components/WhatsAppChatbot';
 import RegistrationPage from './components/RegistrationPage';
+import WhatsAppChatbot from './components/WhatsAppChatbot';
 
 const App: React.FC = () => {
     const [products, setProducts] = useState<Product[]>(mockProducts);
     const [students, setStudents] = useState<Student[]>(mockStudents);
     const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>(mockActivityLog);
-    const [view, setView] = useState<View>({ type: 'dashboard' });
-    const [currentUser, setCurrentUser] = useState<Student | null>(null);
+    const [view, setView] = useState<View>({ type: 'home' });
+    const [loggedInUser, setLoggedInUser] = useState<Student | null>(null);
     const [isInsightsModalOpen, setIsInsightsModalOpen] = useState(false);
     const [insights, setInsights] = useState('');
-    const [isGeneratingInsights, setIsGeneratingInsights] = useState(false);
 
-    useEffect(() => {
-        const handleHashChange = () => {
-            const hash = window.location.hash.slice(1);
-            if (hash.startsWith('register/')) {
-                const productId = hash.split('/')[1];
-                setView({ type: 'register', id: productId });
-            } else if (!currentUser) {
-                 window.location.hash = '';
-                 setView({ type: 'dashboard' }); // Reset view for login page
-            }
-        };
+    const addActivityLog = useCallback((entry: Omit<ActivityLogEntry, 'id' | 'timestamp'>) => {
+        setActivityLog(prev => [...prev, { ...entry, id: crypto.randomUUID(), timestamp: new Date().toISOString() }]);
+    }, []);
 
-        window.addEventListener('hashchange', handleHashChange);
-        handleHashChange();
+    const checkAndIssueCertificate = useCallback(async (studentId: string, enrollmentId: string, currentStudentsState: Student[]) => {
+        const student = currentStudentsState.find(s => s.id === studentId);
+        if (!student) return;
 
-        return () => window.removeEventListener('hashchange', handleHashChange);
-    }, [currentUser]);
+        const enrollment = student.enrollments.find(e => e.id === enrollmentId);
+        if (!enrollment) return;
 
+        const product = products.find(p => p.id === enrollment.productId);
+        if (!product) return;
 
-    const addActivityLog = (entry: Omit<ActivityLogEntry, 'id' | 'timestamp'>) => {
-        const newEntry: ActivityLogEntry = {
-            ...entry,
-            id: `log_${Date.now()}`,
-            timestamp: new Date().toISOString(),
-        };
-        setActivityLog(prev => [newEntry, ...prev].slice(0, 50));
-    };
+        const attendance = enrollment.attendance || [];
+        const presenceCount = attendance.filter(att => att.status).length;
+        const totalSessions = attendance.length;
+        const presencePercentage = totalSessions > 0 ? (presenceCount / totalSessions) * 100 : 0;
 
-    const handleRegisterStudent = (data: Omit<Student, 'id' | 'enrollments' | 'role'> & { enrollment: Omit<Enrollment, 'id' | 'attendance'> }) => {
-        const existingStudent = students.find(s => s.email.toLowerCase() === data.email.toLowerCase());
-        const product = products.find(p => p.id === data.enrollment.productId);
-        const courseClass = product?.classes.find(c => c.id === data.enrollment.classId);
+        const isEligible = presencePercentage >= 80 && enrollment.enrollmentStatus === EnrollmentStatus.Completed;
+        const needsIssuing = enrollment.certificateStatus !== CertificateStatus.Issued;
 
-        const newEnrollment: Enrollment = {
-            ...data.enrollment,
-            id: `enroll_${Date.now()}`,
-            attendance: Array(courseClass?.totalSessions || 1).fill(false),
-        };
-
-        if (existingStudent) {
-            setStudents(students.map(s => {
-                if (s.id === existingStudent.id) {
-                    addActivityLog({ type: ActivityLogType.ENROLLMENT, description: `<strong>${s.name}</strong> se matriculou em <strong>${product?.name}</strong>.`, studentId: s.id, studentName: s.name });
-                    const updatedStudent = {
+        if (isEligible && needsIssuing) {
+            setStudents(prevStudents => prevStudents.map(s => {
+                if (s.id === studentId) {
+                    return {
                         ...s,
-                        name: data.name || s.name,
-                        companyName: data.companyName || s.companyName,
-                        jobTitle: data.jobTitle || s.jobTitle,
-                        phone: data.phone || s.phone,
-                        address: data.address || s.address,
-                        location: data.location || s.location,
-                        enrollments: [...s.enrollments, newEnrollment]
+                        enrollments: s.enrollments.map(e => 
+                            e.id === enrollmentId ? { ...e, certificateStatus: CertificateStatus.Issued } : e
+                        )
                     };
-                    return updatedStudent;
                 }
                 return s;
             }));
+
+            addActivityLog({
+                type: ActivityLogType.CERTIFICATE_ISSUED,
+                description: `Certificado emitido automaticamente para <strong>${student.name}</strong> no curso <strong>${product.name}</strong> por atingir ${presencePercentage.toFixed(0)}% de presença.`,
+                studentId: student.id,
+                studentName: student.name
+            });
+
+            const emailResult = await sendCertificateNotification(student, product);
+            addActivityLog({
+                type: ActivityLogType.EMAIL_NOTIFICATION,
+                description: emailResult.success
+                    ? `Email de notificação de certificado enviado para <strong>${student.name}</strong>.`
+                    : `Falha ao enviar email de notificação de certificado para <strong>${student.name}</strong>. Motivo: ${emailResult.error}`,
+                studentId: student.id,
+                studentName: student.name
+            });
+        }
+    }, [products, addActivityLog]);
+
+    const handleUpdateAttendance = useCallback(async (studentId: string, enrollmentId: string, sessionIndex: number, newStatus: boolean, source: AttendanceSource) => {
+        let updatedStudents: Student[] = [];
+        setStudents(prevStudents => {
+            updatedStudents = prevStudents.map(student => {
+                if (student.id === studentId) {
+                    return {
+                        ...student,
+                        enrollments: student.enrollments.map(enrollment => {
+                            if (enrollment.id === enrollmentId) {
+                                const newAttendanceArray = [...enrollment.attendance];
+                                newAttendanceArray[sessionIndex] = {
+                                    status: newStatus,
+                                    source: source,
+                                    timestamp: new Date().toISOString(),
+                                };
+                                return { ...enrollment, attendance: newAttendanceArray };
+                            }
+                            return enrollment;
+                        })
+                    };
+                }
+                return student;
+            });
+            return updatedStudents;
+        });
+        await checkAndIssueCertificate(studentId, enrollmentId, updatedStudents);
+    }, [checkAndIssueCertificate]);
+
+    const handleUpdateEnrollmentStatus = useCallback(async (studentId: string, enrollmentId: string, newStatus: EnrollmentStatus) => {
+        let studentName = '';
+        let productName = '';
+        let updatedStudents: Student[] = [];
+
+        setStudents(prevStudents => {
+            updatedStudents = prevStudents.map(student => {
+                if (student.id === studentId) {
+                    studentName = student.name;
+                    return {
+                        ...student,
+                        enrollments: student.enrollments.map(enrollment => {
+                            if (enrollment.id === enrollmentId) {
+                                const product = products.find(p => p.id === enrollment.productId);
+                                productName = product?.name || 'Curso desconhecido';
+                                return { ...enrollment, enrollmentStatus: newStatus };
+                            }
+                            return enrollment;
+                        })
+                    };
+                }
+                return student;
+            });
+            return updatedStudents;
+        });
+        
+        addActivityLog({
+            type: ActivityLogType.STATUS_CHANGE,
+            description: `Status de <strong>${studentName}</strong> em <strong>${productName}</strong> alterado para <strong>${newStatus}</strong>.`,
+            studentId,
+            studentName
+        });
+        
+        if (newStatus === EnrollmentStatus.Completed) {
+            await checkAndIssueCertificate(studentId, enrollmentId, updatedStudents);
+        }
+    }, [products, addActivityLog, checkAndIssueCertificate]);
+
+    const handleIssueCertificate = useCallback(async (studentId: string, enrollmentId: string) => {
+        let studentName = '';
+        let productName = '';
+        let studentForEmail: Student | undefined;
+        let productForEmail: Product | undefined;
+
+        setStudents(prevStudents => {
+            const student = prevStudents.find(s => s.id === studentId);
+            if (!student) return prevStudents;
+
+            studentForEmail = student;
+            const enrollment = student.enrollments.find(e => e.id === enrollmentId);
+            if (!enrollment) return prevStudents;
+
+            productForEmail = products.find(p => p.id === enrollment.productId);
+            studentName = student.name;
+            productName = productForEmail?.name || 'Curso';
+
+            return prevStudents.map(s => {
+                if (s.id === studentId) {
+                    return {
+                        ...s,
+                        enrollments: s.enrollments.map(e => 
+                            e.id === enrollmentId ? { ...e, certificateStatus: CertificateStatus.Issued } : e
+                        )
+                    };
+                }
+                return s;
+            });
+        });
+        
+        addActivityLog({
+            type: ActivityLogType.CERTIFICATE_ISSUED,
+            description: `Certificado emitido manualmente para <strong>${studentName}</strong> no curso <strong>${productName}</strong>.`,
+            studentId, studentName
+        });
+
+        if (studentForEmail && productForEmail) {
+            const emailResult = await sendCertificateNotification(studentForEmail, productForEmail);
+            addActivityLog({
+                type: ActivityLogType.EMAIL_NOTIFICATION,
+                description: emailResult.success
+                    ? `Email de notificação de certificado enviado para <strong>${studentName}</strong>.`
+                    : `Falha ao enviar email de notificação de certificado para <strong>${studentName}</strong>. Motivo: ${emailResult.error}`,
+                studentId, studentName
+            });
+        }
+    }, [products, addActivityLog]);
+
+    const handleBatchIssueCertificates = useCallback((classId: string, productId: string) => {
+        let issuedCount = 0;
+        const product = products.find(p => p.id === productId);
+        if (!product) return;
+        
+        let currentStudentsState = students;
+        setStudents(prevStudents => {
+            currentStudentsState = prevStudents;
+            return prevStudents;
+        });
+        
+        const studentsInClass = currentStudentsState.filter(s => s.enrollments.some(e => e.classId === classId));
+        
+        studentsInClass.forEach(student => {
+            const enrollment = student.enrollments.find(e => e.classId === classId);
+            if (!enrollment) return;
+
+            const presenceCount = enrollment.attendance.filter(att => att.status).length;
+            const totalSessions = enrollment.attendance.length;
+            const presencePercentage = totalSessions > 0 ? (presenceCount / totalSessions) * 100 : 0;
+            const isEligible = presencePercentage >= 80 && enrollment.enrollmentStatus === EnrollmentStatus.Completed;
+
+            if (isEligible && enrollment.certificateStatus !== CertificateStatus.Issued) {
+                handleIssueCertificate(student.id, enrollment.id);
+                issuedCount++;
+            }
+        });
+
+        if (issuedCount > 0) {
+            const courseClass = product.classes.find(c => c.id === classId);
+            addActivityLog({
+                type: ActivityLogType.BATCH_CERTIFICATE_ISSUED,
+                description: `Emissão em lote: <strong>${issuedCount}</strong> certificado(s) emitido(s) para a turma <strong>${courseClass?.name || ''}</strong>.`
+            });
+        } else {
+            alert("Nenhum aluno estava apto a receber o certificado nesta turma.");
+        }
+    }, [students, products, addActivityLog, handleIssueCertificate]);
+
+    const handleRegisterStudent = useCallback(async (data: any) => {
+        const existingStudent = students.find(s => s.email === data.email);
+        const { enrollment, ...studentData } = data;
+
+        const product = products.find(p => p.id === enrollment.productId);
+        if (!product) return;
+        const courseClass = product.classes.find(c => c.id === enrollment.classId);
+        if (!courseClass) return;
+
+        const newEnrollment: Enrollment = {
+            id: `enroll_${crypto.randomUUID()}`,
+            ...enrollment,
+            attendance: Array.from({ length: courseClass.totalSessions }, () => ({ status: false, source: AttendanceSource.System })),
+        };
+
+        if (existingStudent) {
+            setStudents(students.map(s => s.id === existingStudent.id ? { ...s, enrollments: [...s.enrollments, newEnrollment] } : s));
         } else {
             const newStudent: Student = {
-                id: `student_${Date.now()}`,
-                name: data.name,
-                email: data.email,
-                companyName: data.companyName,
-                jobTitle: data.jobTitle,
-                phone: data.phone,
-                address: data.address,
-                location: data.location,
+                id: `student_${crypto.randomUUID()}`,
+                ...studentData,
                 role: 'student',
                 enrollments: [newEnrollment],
             };
-            addActivityLog({ type: ActivityLogType.ENROLLMENT, description: `Novo aluno <strong>${newStudent.name}</strong> matriculado em <strong>${product?.name}</strong>.`, studentId: newStudent.id, studentName: newStudent.name });
             setStudents(prev => [...prev, newStudent]);
         }
-        alert('Matrícula registrada com sucesso!');
-        setView({ type: 'dashboard' });
-    };
-    
-    const handleEnrollInNewCourse = (studentId: string, productId: string, classId: string) => {
-        const student = students.find(s => s.id === studentId);
-        const product = products.find(p => p.id === productId);
-        const courseClass = product?.classes.find(c => c.id === classId);
+        
+        addActivityLog({
+            type: ActivityLogType.ENROLLMENT,
+            description: `<strong>${data.name}</strong> se matriculou em <strong>${product.name}</strong>.`,
+            studentId: existingStudent?.id,
+            studentName: data.name
+        });
 
-        if (!student || !product || !courseClass) {
-            alert("Erro: Aluno, produto ou turma não encontrado.");
-            return;
-        }
+        const emailResult = await sendEnrollmentConfirmation({ name: data.name, email: data.email }, product, courseClass);
+        addActivityLog({
+            type: ActivityLogType.EMAIL_NOTIFICATION,
+            description: emailResult.success
+                ? `Email de confirmação enviado para <strong>${data.name}</strong>.`
+                : `Falha ao enviar email de confirmação para <strong>${data.name}</strong>. Motivo: ${emailResult.error}`,
+            studentName: data.name
+        });
+    }, [students, products, addActivityLog]);
+
+    const handleEnrollInNewCourse = useCallback((studentId: string, productId: string, classId: string) => {
+        const product = products.find(p => p.id === productId);
+        if (!product) return;
+        const courseClass = product.classes.find(c => c.id === classId);
+        if (!courseClass) return;
 
         const newEnrollment: Enrollment = {
-            id: `enroll_${Date.now()}`,
+            id: crypto.randomUUID(),
             productId,
             classId,
             enrollmentDate: new Date().toISOString(),
-            source: Source.Site, // Default for internal enrollment
-            paymentMethod: PaymentMethod.Pix, // Default
-            paymentStatus: PaymentStatus.Pending,
+            source: Source.Site, // Assuming enrollment from student dashboard is 'Site'
+            paymentMethod: PaymentMethod.CreditCard, // Default or could be asked
+            paymentStatus: PaymentStatus.Paid, // Assuming immediate payment
             enrollmentStatus: EnrollmentStatus.Active,
             certificateStatus: CertificateStatus.NotIssued,
             isCorporatePurchase: false,
-            attendance: Array(courseClass.totalSessions).fill(false),
+            attendance: Array.from({ length: courseClass.totalSessions }, () => ({ status: false, source: AttendanceSource.System })),
         };
-        
-        setStudents(students.map(s => 
-            s.id === studentId 
-            ? { ...s, enrollments: [...s.enrollments, newEnrollment] } 
-            : s
-        ));
 
-        addActivityLog({ type: ActivityLogType.ENROLLMENT, description: `<strong>${student.name}</strong> foi matriculado(a) no curso <strong>${product.name}</strong>.`, studentId: student.id, studentName: student.name });
-        alert(`${student.name} matriculado(a) com sucesso!`);
-    };
-
-    const handleUpdateAttendance = (studentId: string, enrollmentId: string, sessionIndex: number, newAttendance: boolean) => {
-        setStudents(students.map(s => {
+        setStudents(prev => prev.map(s => {
             if (s.id === studentId) {
-                return {
-                    ...s,
-                    enrollments: s.enrollments.map(e => {
-                        if (e.id === enrollmentId) {
-                            const updatedAttendance = [...e.attendance];
-                            updatedAttendance[sessionIndex] = newAttendance;
-                            return { ...e, attendance: updatedAttendance };
-                        }
-                        return e;
-                    }),
-                };
+                return { ...s, enrollments: [...s.enrollments, newEnrollment] };
             }
             return s;
         }));
-    };
-    
-    const handleUpdateEnrollmentStatus = (studentId: string, enrollmentId: string, newStatus: EnrollmentStatus) => {
-        let student: Student | undefined;
-        const updatedStudents = students.map(s => {
-            if (s.id === studentId) {
-                student = s;
-                return {
-                    ...s,
-                    enrollments: s.enrollments.map(e => {
-                        if (e.id === enrollmentId) {
-                             if (e.enrollmentStatus !== newStatus) {
-                                const product = products.find(p => p.id === e.productId);
-                                addActivityLog({ type: ActivityLogType.STATUS_CHANGE, description: `Status de <strong>${s.name}</strong> em <strong>${product?.name}</strong> alterado para <strong>${newStatus}</strong>.`, studentId: s.id, studentName: s.name });
-                            }
-                            return { ...e, enrollmentStatus: newStatus };
-                        }
-                        return e;
-                    }),
-                };
-            }
-            return s;
-        });
-         setStudents(updatedStudents);
-    };
 
-     const handleCreateClass = (newClassData: Omit<CourseClass, 'id'>, productId: string) => {
-        setProducts(products.map(p => {
+        const student = students.find(s => s.id === studentId);
+        if (student) {
+            addActivityLog({
+                type: ActivityLogType.ENROLLMENT,
+                description: `<strong>${student.name}</strong> se matriculou no novo curso <strong>${product.name}</strong>.`,
+                studentId,
+                studentName: student.name
+            });
+            sendEnrollmentConfirmation(student, product, courseClass);
+        }
+    }, [products, students, addActivityLog]);
+
+    const handleUpdateStudentProfile = useCallback((studentId: string, updatedData: Partial<Omit<Student, 'id' | 'enrollments'>>) => {
+        setStudents(prev => prev.map(s => s.id === studentId ? { ...s, ...updatedData } : s));
+        const student = students.find(s => s.id === studentId);
+        if (student) {
+            addActivityLog({
+                type: ActivityLogType.PROFILE_UPDATE,
+                description: `Perfil de <strong>${student.name}</strong> foi atualizado.`,
+                studentId,
+                studentName: student.name
+            });
+        }
+    }, [students, addActivityLog]);
+
+    const handleCreateClass = useCallback((newClassData: Omit<CourseClass, 'id'>, productId: string) => {
+        const newClass = { ...newClassData, id: `class_${crypto.randomUUID()}` };
+        setProducts(prev => prev.map(p => {
             if (p.id === productId) {
-                const newClass: CourseClass = { ...newClassData, id: `class_${Date.now()}` };
-                addActivityLog({ type: ActivityLogType.CLASS_CREATED, description: `Nova turma "<strong>${newClass.name}</strong>" criada para o curso <strong>${p.name}</strong>.` });
                 return { ...p, classes: [...p.classes, newClass] };
             }
             return p;
         }));
-    };
+        const product = products.find(p => p.id === productId);
+        addActivityLog({
+            type: ActivityLogType.CLASS_CREATED,
+            description: `Nova turma <strong>${newClass.name}</strong> criada para o curso <strong>${product?.name || ''}</strong>.`
+        });
+    }, [products, addActivityLog]);
     
-     const handleUpdateClass = (updatedClass: CourseClass, productId: string) => {
-        setProducts(products.map(p => {
+    const handleUpdateClass = useCallback((updatedClass: CourseClass, productId: string) => {
+        setProducts(prev => prev.map(p => {
             if (p.id === productId) {
-                addActivityLog({ type: ActivityLogType.CLASS_UPDATE, description: `Turma "<strong>${updatedClass.name}</strong>" do curso <strong>${p.name}</strong> foi atualizada.` });
-                return { ...p, classes: p.classes.map(c => c.id === updatedClass.id ? updatedClass : c) };
+                return {
+                    ...p,
+                    classes: p.classes.map(c => c.id === updatedClass.id ? updatedClass : c)
+                };
             }
             return p;
         }));
-        sendNotification(`Turma Atualizada: ${updatedClass.name}`, `A turma do curso ${products.find(p=>p.id === productId)?.name} foi atualizada.`);
-    };
-
-    const handleUpdateStudentProfile = (studentId: string, updatedData: Partial<Omit<Student, 'id' | 'enrollments'>>) => {
-        setStudents(students.map(s => {
-            if (s.id === studentId) {
-                addActivityLog({ type: ActivityLogType.PROFILE_UPDATE, description: `Perfil de <strong>${s.name}</strong> foi atualizado.`, studentId: s.id, studentName: s.name });
-                return { ...s, ...updatedData };
-            }
-            return s;
-        }));
-    };
-    
-    const handleIssueCertificate = (studentId: string, enrollmentId: string) => {
-        setStudents(students.map(s => {
-            if (s.id === studentId) {
-                return {
-                    ...s,
-                    enrollments: s.enrollments.map(e => {
-                        if (e.id === enrollmentId) {
-                            const product = products.find(p => p.id === e.productId);
-                             addActivityLog({ type: ActivityLogType.CERTIFICATE_ISSUED, description: `Certificado emitido para <strong>${s.name}</strong> no curso <strong>${product?.name}</strong>.`, studentId: s.id, studentName: s.name });
-                            return { ...e, certificateStatus: CertificateStatus.Issued };
-                        }
-                        return e;
-                    }),
-                };
-            }
-            return s;
-        }));
-    };
-
-    const handleBatchIssueCertificates = (classId: string, productId: string) => {
-        let issuedCount = 0;
-        const product = products.find(p => p.id === productId);
-        const courseClass = product?.classes.find(c => c.id === classId);
-
-        if (!product || !courseClass) return;
-
-        setStudents(prevStudents => prevStudents.map(student => {
-            return {
-                ...student,
-                enrollments: student.enrollments.map(enrollment => {
-                    if (enrollment.classId === classId && enrollment.enrollmentStatus === EnrollmentStatus.Completed && enrollment.certificateStatus !== CertificateStatus.Issued) {
-                        const presenceCount = enrollment.attendance.filter(Boolean).length;
-                        const requiredPresence = Math.ceil(enrollment.attendance.length * 0.8);
-                        if (presenceCount >= requiredPresence) {
-                            issuedCount++;
-                            return { ...enrollment, certificateStatus: CertificateStatus.Issued };
-                        }
-                    }
-                    return enrollment;
-                })
-            };
-        }));
-        
-        if (issuedCount > 0) {
-            addActivityLog({ type: ActivityLogType.BATCH_CERTIFICATE_ISSUED, description: `<strong>${issuedCount}</strong> certificados emitidos para a turma <strong>${courseClass.name}</strong>.` });
-            alert(`${issuedCount} certificados foram emitidos com sucesso!`);
-        } else {
-            alert("Nenhum aluno estava apto a receber o certificado nesta turma (requer 80% de presença e status 'Concluído').");
-        }
-    };
-
+         const product = products.find(p => p.id === productId);
+         addActivityLog({
+            type: ActivityLogType.CLASS_UPDATE,
+            description: `Turma <strong>${updatedClass.name}</strong> do curso <strong>${product?.name || ''}</strong> foi atualizada.`
+        });
+    }, [products, addActivityLog]);
 
     const handleLogin = (email: string, pass: string): boolean => {
-        const user = students.find(s => s.email.toLowerCase() === email.toLowerCase());
-        if (user && user.password && user.password === pass) {
-             setCurrentUser(user);
-             if(user.role !== 'student') {
+        const user = students.find(s => s.email.toLowerCase() === email.toLowerCase() && s.password === pass);
+        if (user) {
+            setLoggedInUser(user);
+            if (user.role === 'admin') {
                 setView({ type: 'dashboard' });
-             }
-             return true;
+            } else {
+                setView({ type: 'student-dashboard' });
+            }
+            return true;
         }
         return false;
     };
     
     const handleLogout = () => {
-        setCurrentUser(null);
-        window.location.hash = '';
+        setLoggedInUser(null);
+        setView({ type: 'home' });
     };
 
+    const handleCreateStudentAccount = (data: Omit<Student, 'id' | 'enrollments' | 'role'>) => {
+        if (students.some(s => s.email.toLowerCase() === data.email.toLowerCase())) {
+            return false;
+        }
+        const newStudent: Student = {
+            ...data,
+            id: `student_${crypto.randomUUID()}`,
+            role: 'student',
+            enrollments: [],
+        };
+        setStudents(prev => [...prev, newStudent]);
+        setLoggedInUser(newStudent);
+        setView({ type: 'student-dashboard' });
+        addActivityLog({
+            type: ActivityLogType.ACCOUNT_CREATED,
+            description: `Nova conta de aluno criada para <strong>${data.name}</strong>.`,
+            studentId: newStudent.id,
+            studentName: newStudent.name
+        });
+        return true;
+    };
+    
     const handleGenerateInsights = async () => {
-        setIsGeneratingInsights(true);
         setIsInsightsModalOpen(true);
-        setInsights('');
+        setInsights(''); // Clear previous insights
         try {
-            const insightText = await generateInsights({ products, students });
-            setInsights(insightText);
+            const result = await generateInsights({ products, students });
+            setInsights(result);
         } catch (error) {
-            console.error(error);
             setInsights("Ocorreu um erro ao gerar os insights. Tente novamente.");
-        } finally {
-            setIsGeneratingInsights(false);
         }
     };
     
-    // --- Push Notifications ---
-    useEffect(() => {
-        if ("Notification" in window && Notification.permission !== "granted") {
-            Notification.requestPermission();
-        }
-    }, []);
-
-    const sendNotification = (title: string, body: string) => {
-        if ("Notification" in window && Notification.permission === "granted") {
-            new Notification(title, { body });
-        }
-    };
-
-
-    const renderView = () => {
-        if (view.type === 'register' && view.id) {
-            const product = products.find(p => p.id === view.id);
-            return product ? <RegistrationPage product={product} onRegisterStudent={handleRegisterStudent} /> : <div className="text-center p-8">Produto não encontrado.</div>;
-        }
-
-        if (!currentUser) {
-            return <LoginPage onLogin={handleLogin} />;
-        }
-        
-        if(currentUser.role === 'student') {
-             return <StudentDashboard student={currentUser} products={products} onLogout={handleLogout} />;
-        }
-        
-        const mainContent = () => {
-            switch (view.type) {
-                case 'dashboard':
-                    return <Dashboard products={products} students={students} setView={setView} activityLog={activityLog} />;
-                case 'enrollment':
-                    return <EnrollmentPage products={products} onRegisterStudent={handleRegisterStudent} />;
-                case 'product-detail': {
-                    const product = products.find(p => p.id === view.id);
-                    return product ? <ProductDetail product={product} students={students} setView={setView} onUpdateAttendance={handleUpdateAttendance} onUpdateEnrollmentStatus={handleUpdateEnrollmentStatus} /> : <div>Produto não encontrado.</div>;
+     useEffect(() => {
+        const handleHashChange = () => {
+            const hash = window.location.hash.replace('#', '');
+            if (hash.startsWith('register/')) {
+                const productId = hash.split('/')[1];
+                if (products.some(p => p.id === productId)) {
+                    setView({ type: 'register', id: productId });
                 }
-                case 'student-profile': {
-                    const student = students.find(s => s.id === view.id);
-                    return student ? <StudentProfile student={student} products={products} setView={setView} onUpdateStudentProfile={handleUpdateStudentProfile} onEnrollInNewCourse={handleEnrollInNewCourse} onIssueCertificate={handleIssueCertificate} /> : <div>Aluno não encontrado.</div>;
-                }
-                case 'turmas':
-                    // FIX: Removed 'students' prop from TurmasPage as it is not part of its props.
-                    return <TurmasPage products={products} setView={setView} onCreateClass={handleCreateClass} />;
-                 case 'turma-detail': {
-                    const [productId, classId] = view.id?.split('|') || [];
-                    const product = products.find(p => p.id === productId);
-                    const courseClass = product?.classes.find(c => c.id === classId);
-                    const enrolledStudents = students.filter(s => s.enrollments.some(e => e.classId === classId));
-                    return (product && courseClass) ? <TurmaDetail product={product} courseClass={courseClass} students={enrolledStudents} setView={setView} onBatchIssueCertificates={handleBatchIssueCertificates} onUpdateClass={handleUpdateClass} /> : <div>Turma não encontrada.</div>;
-                }
-                case 'financials':
-                    return <FinancialsPage students={students} products={products} />;
-                default:
-                    return <Dashboard products={products} students={students} setView={setView} activityLog={activityLog} />;
+            } else if (!loggedInUser) {
+                 setView({ type: 'home' });
             }
         };
 
+        window.addEventListener('hashchange', handleHashChange);
+        handleHashChange(); // Check on initial load
+
+        return () => window.removeEventListener('hashchange', handleHashChange);
+    }, [products, loggedInUser]);
+    
+
+    const renderContent = () => {
+        if (!loggedInUser) {
+            switch (view.type) {
+                case 'login': return <LoginPage onLogin={handleLogin} setView={setView} />;
+                case 'signup': return <SignupPage onSignup={handleCreateStudentAccount} setView={setView} />;
+                case 'register':
+                    const product = products.find(p => p.id === view.id);
+                    return product ? <RegistrationPage product={product} onRegisterStudent={handleRegisterStudent} /> : <PublicHomePage products={products} setView={setView} onRegisterStudent={handleRegisterStudent}/>;
+                default: return <PublicHomePage products={products} setView={setView} onRegisterStudent={handleRegisterStudent} />;
+            }
+        }
+
+        if (loggedInUser.role === 'student') {
+            return <StudentDashboard student={loggedInUser} products={products} onLogout={handleLogout} onEnrollInNewCourse={handleEnrollInNewCourse} />;
+        }
+        
+        // Admin View
         return (
-            <div className="flex min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+            <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
                 <Sidebar setView={setView} onLogout={handleLogout} onGenerateInsights={handleGenerateInsights} />
-                <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
-                    {mainContent()}
+                <main className="flex-1 p-8 overflow-y-auto">
+                    {view.type === 'dashboard' && <Dashboard products={products} students={students} setView={setView} activityLog={activityLog} />}
+                    {view.type === 'enrollment' && <EnrollmentPage products={products} onRegisterStudent={handleRegisterStudent} />}
+                    {view.type === 'product-detail' && view.id &&
+                        <ProductDetail
+                            product={products.find(p => p.id === view.id)!}
+                            students={students.filter(s => s.enrollments.some(e => e.productId === view.id))}
+                            setView={setView}
+                            onUpdateAttendance={handleUpdateAttendance}
+                            onUpdateEnrollmentStatus={handleUpdateEnrollmentStatus}
+                        />}
+                    {view.type === 'student-profile' && view.id &&
+                        <StudentProfile
+                            student={students.find(s => s.id === view.id)!}
+                            products={products}
+                            setView={setView}
+                            onUpdateStudentProfile={handleUpdateStudentProfile}
+                            onEnrollInNewCourse={handleEnrollInNewCourse}
+                            onIssueCertificate={handleIssueCertificate}
+                        />}
+                    {view.type === 'turmas' && <TurmasPage products={products} setView={setView} onCreateClass={handleCreateClass} />}
+                    {view.type === 'turma-detail' && view.id &&
+                        (() => {
+                            const [productId, classId] = view.id.split('|');
+                            const product = products.find(p => p.id === productId);
+                            const courseClass = product?.classes.find(c => c.id === classId);
+                            if (!product || !courseClass) return <div>Turma não encontrada.</div>;
+                            return <TurmaDetail
+                                product={product}
+                                courseClass={courseClass}
+                                students={students.filter(s => s.enrollments.some(e => e.classId === classId))}
+                                setView={setView}
+                                onUpdateClass={handleUpdateClass}
+                                onBatchIssueCertificates={handleBatchIssueCertificates}
+                            />;
+                        })()}
+                    {view.type === 'financials' && <FinancialsPage products={products} students={students} />}
                 </main>
-                 <WhatsAppChatbot phoneNumber="5511912345678" message="Olá! Tenho uma dúvida sobre os cursos." />
+                {isInsightsModalOpen && <InsightsModal insights={insights} onClose={() => setIsInsightsModalOpen(false)} />}
+                <WhatsAppChatbot phoneNumber="5511912345678" message="Olá! Preciso de ajuda no painel de gestão." />
             </div>
         );
     };
 
-    return (
-        <>
-            {renderView()}
-            {isInsightsModalOpen && <InsightsModal insights={isGeneratingInsights ? "Gerando insights..." : insights} onClose={() => setIsInsightsModalOpen(false)} />}
-        </>
-    );
+    return <div className="antialiased">{renderContent()}</div>;
 };
 
 export default App;

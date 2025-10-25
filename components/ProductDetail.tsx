@@ -1,16 +1,13 @@
-
 import React, { useState } from 'react';
-// FIX: Import View from types.ts and remove the local definition.
-import { Product, Student, EnrollmentStatus, CourseClass, View } from '../types';
-import QRCodeModal from './QRCodeModal';
+import { Product, Student, EnrollmentStatus, View, AttendanceSource } from '../types';
 import ShareModal from './ShareModal';
+import { exportToCsv } from '../utils/exportUtils';
 
 interface ProductDetailProps {
     product: Product;
     students: Student[];
     setView: (view: View) => void;
-    // FIX: Update prop signature to match the handler in App.tsx.
-    onUpdateAttendance: (studentId: string, enrollmentId: string, sessionIndex: number, newAttendance: boolean) => void;
+    onUpdateAttendance: (studentId: string, enrollmentId: string, sessionIndex: number, newStatus: boolean, source: AttendanceSource) => void;
     onUpdateEnrollmentStatus: (studentId: string, enrollmentId: string, newStatus: EnrollmentStatus) => void;
 }
 
@@ -24,6 +21,25 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ product, students, setVie
     );
 
     const shareUrl = `${window.location.origin}${window.location.pathname}#product/${product.id}`;
+
+    const handleExport = () => {
+        const dataToExport = productEnrollments.map(enrollment => {
+            const courseClass = product.classes.find(c => c.id === enrollment.classId);
+            const presenceCount = enrollment.attendance.filter(att => att.status).length;
+            const totalSessions = enrollment.attendance.length;
+            return {
+                'Aluno': enrollment.studentName,
+                'Turma': courseClass?.name || 'N/A',
+                'Status': enrollment.enrollmentStatus,
+                'Presença': `${presenceCount}/${totalSessions} (${totalSessions > 0 ? ((presenceCount / totalSessions) * 100).toFixed(0) : 0}%)`
+            };
+        });
+        if (dataToExport.length > 0) {
+            exportToCsv(`alunos_${product.name.replace(/\s+/g, '_')}.csv`, dataToExport);
+        } else {
+            alert("Não há alunos para exportar.");
+        }
+    };
 
     const getStatusColor = (status: EnrollmentStatus) => {
         switch(status) {
@@ -55,7 +71,15 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ product, students, setVie
             </div>
 
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
-                <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Alunos Matriculados</h2>
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Alunos Matriculados ({productEnrollments.length})</h2>
+                    <button
+                        onClick={handleExport}
+                        className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700"
+                    >
+                        Exportar CSV
+                    </button>
+                </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
                         <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
@@ -83,13 +107,12 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ product, students, setVie
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-2">
-                                            {enrollment.attendance.map((attended, i) => (
+                                            {enrollment.attendance.map((att, i) => (
                                                 <button 
                                                     key={i} 
-                                                    // FIX: Pass the new attendance status (toggling the current one).
-                                                    onClick={() => onUpdateAttendance(enrollment.studentId, enrollment.id, i, !attended)}
-                                                    className={`w-5 h-5 rounded-full border-2 ${attended ? 'bg-green-500 border-green-600' : 'bg-gray-200 border-gray-400 dark:bg-gray-600 dark:border-gray-500'}`}
-                                                    title={`Sessão ${i + 1}: ${attended ? 'Presente' : 'Ausente'}`}
+                                                    onClick={() => onUpdateAttendance(enrollment.studentId, enrollment.id, i, !att.status, AttendanceSource.Manual)}
+                                                    className={`w-5 h-5 rounded-full border-2 ${att.status ? 'bg-green-500 border-green-600' : 'bg-gray-200 border-gray-400 dark:bg-gray-600 dark:border-gray-500'}`}
+                                                    title={`Sessão ${i + 1}: ${att.status ? 'Presente' : 'Ausente'} (Fonte: ${att.source})`}
                                                 />
                                             ))}
                                         </div>
