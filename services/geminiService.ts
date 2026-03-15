@@ -2,12 +2,16 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Product, Student, PaymentMethod } from '../types';
 
 // Per guidelines, initialize with apiKey from environment variables.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY || '';
+const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
 /**
  * Generates business insights from product and student data.
  */
 export const generateInsights = async (data: { products: Product[], students: Student[] }): Promise<string> => {
+    if (!ai) {
+        return "A API Key do Gemini não está configurada. Configure a variável de ambiente GEMINI_API_KEY para habilitar os insights com IA.";
+    }
     // FIX: Use a model suitable for complex text tasks like analysis.
     const model = 'gemini-2.5-pro';
 
@@ -47,6 +51,9 @@ export const generateInsights = async (data: { products: Product[], students: St
  * Extracts structured enrollment data from unstructured text.
  */
 export const extractEnrollmentData = async (text: string, products: Product[]): Promise<any> => {
+    if (!ai) {
+        throw new Error("A API Key do Gemini não está configurada.");
+    }
     const model = 'gemini-2.5-flash';
 
     const productNames = products.map(p => p.name).join(', ');
@@ -119,6 +126,9 @@ export const extractEnrollmentData = async (text: string, products: Product[]): 
 };
 
 export const generateChatbotResponse = async (chat: any, message: string, products: Product[]): Promise<string> => {
+    if (!ai) {
+        return "Desculpe, o assistente de IA não está disponível no momento. Por favor, entre em contato diretamente conosco.";
+    }
     const model = 'gemini-2.5-flash';
     
     const productAndClassList = products.map(p => {
